@@ -3,13 +3,13 @@
 // @namespace intermission
 // @include   https://*
 // @include   http://*
-// @version   2
+// @version   3
 // @run-at    document-start
 // @grant     none
 // ==/UserScript==
 
-const w = unsafeWindow || window;
-const {console} = w;
+const w = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
+const { warn, trace, log } = w.console;
 
 const checkNeeds = () => {
   let ret = 4; // default access limit
@@ -34,34 +34,30 @@ const checkNeeds = () => {
 const limit = checkNeeds();
 
 let accessedSoFar = 0;
-const orig = w.navigator, cache = Object.create(null),
-implementTrap = function(val, key) {
+const orig = w.navigator, cache = Object.setPrototypeOf({ onLine: true, doNotTrack: 1, cookieEnabled: true }, null);
+function implementTrap(val, key) {
   if (key in cache) {
     return cache[key];
   }
   else {
     if (accessedSoFar > limit) {
-      console.warn(
-        "`navigator` was accessed too many times\n",
-        `Key: "${key}"\n`,
-        "Real value:", orig[key], "\n",
-        "Cache:", cache, "\n",
-        "Stack trace:"
+      warn(
+        "`navigator` was accessed too many times\nKey: \"%s\"\nReal value:%o\nCache:%o\nStack trace:",
+        key, orig[key], cache
       );
-      console.trace();
+      trace();
       throw Symbol();
     }
-    else if (key in Object(this)) {
+    else if (key in this) {
       ++accessedSoFar;
-      return (cache[key] = typeof val === "function" ? val.bind(orig) : val);
+      return cache[key] = typeof val === "function" ? val.bind(orig) : val;
     }
   }
-  return void 0;
-},
-proxy = () => {
-  const objNavigator = Object.create(null);
+}
+function proxy() {
+  const objNavigator = Object.setPrototypeOf({}, null);
   const setThrow = () => { throw Symbol(); };
-  for (let i = 0, arr = Object.keys(Object.getPrototypeOf(orig)), len = arr.length, key; i < len && ((key = arr[i]) || true); ++i)
+  for (let i = 0, arr = Object.keys(Object.getPrototypeOf(orig)), len = arr.length, key; i < len && (key = arr[i], true); ++i)
     Object.defineProperty(objNavigator, key, {
       get: implementTrap.bind(objNavigator, orig[key], key),
       set: setThrow,
@@ -70,10 +66,10 @@ proxy = () => {
   if (orig.serviceWorker)
     cache.serviceWorker = orig.serviceWorker;
   return objNavigator;
-};
+}
 Object.defineProperty(w, "navigator", { value: proxy(), enumerable: true });
 w.addEventListener("revealCache", e => {
-  if (e.target != e.currentTarget)
+  if (e.target !== e.currentTarget)
     return;
-  console.log(cache);
+  log(cache);
 });
